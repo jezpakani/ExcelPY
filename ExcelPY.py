@@ -1,5 +1,4 @@
 import datetime
-
 from openpyxl import load_workbook, Workbook
 from os import system, name
 from colorama import init, Fore
@@ -10,13 +9,14 @@ from datetime import timedelta, date
 class ExcelPY:
     def __init__(self, infile_name, outfile_name):
         """ Initialize our class and get things ready. """
-        self.start_time = datetime.datetime.now()
-        self.end_time = datetime.datetime.now()
-        self.execution_time = datetime.datetime.now()
+        self.start_time = datetime.datetime.now()  # start timer before first operation
+        self.end_time = datetime.datetime.now()  # end timer after last operation
+        self.execution_time = datetime.datetime.now()  # results of our timer
         self.infile_name = infile_name  # name of input file (data dump)
         self.outfile_name = outfile_name  # name of output file (target excel spreadsheet)
         self.infile = Workbook()  # file handle for input file
         self.outfile = Workbook()  # file handle for output file
+        self.test_data_row_count = 1000  # how many rows of test data we will be creating
 
         if not self.open_files():
             exit()
@@ -24,9 +24,6 @@ class ExcelPY:
     def __del__(self):
         """ Perform cleanup operations when we destroy our class instance. """
         self.close_files()
-        self.end_time = datetime.datetime.now()
-        self.execution_time = self.end_time - self.start_time
-        message('Total execution time was {} ms.'.format(self.execution_time))
 
     def open_files(self):
         """ Open files needed to perform our processes. """
@@ -51,9 +48,11 @@ class ExcelPY:
         self.outfile.close()
 
     def generate_data_dump(self):
+        """ Populate our input file with random test data """
+        # TODO: Add logic to this method to add created data to the correct tab in our output file.
         message('Generating input file with random values')
         self.is_not_used()
-        column_headers = ('Incident Number', 'Opened', 'Short Description', 'Impact', 'Priority',
+        column_headers = ('Type Number', 'Opened', 'Short Description', 'Impact', 'Priority',
                           'Severity', 'Status', 'Opened By', 'Assigned To', 'Incident Status',
                           'SLA Due', 'Estimated Hours', 'Assignment Group')
         data_types = ('INC', 'DFCT', 'ENHC', 'ALM')
@@ -68,8 +67,8 @@ class ExcelPY:
         for x in range(0, len(column_headers)):  # create our column headers
             sheet.cell(row=1, column=x + 1).value = column_headers[x]
 
-        for x in range(2, 100):  # now lets generate random cell data
-            sheet.cell(row=x, column=1).value = data_types[randint(0, len(data_types) - 1)] + str(randint(100, 999))
+        for x in range(2, self.test_data_row_count):  # now lets generate random cell data
+            sheet.cell(row=x, column=1).value = data_types[randint(0, len(data_types) - 1)] + str(randint(10000, 99999))
             sheet.cell(row=x, column=2).value = date.today() + timedelta(days=randint(1, 10))
             sheet.cell(row=x, column=3).value = 'Short Description #' + str(x)
             sheet.cell(row=x, column=4).value = levels[randint(0, len(levels) - 1)]
@@ -85,6 +84,19 @@ class ExcelPY:
 
         self.infile.save(self.infile_name)
         message('Completed generating input file')
+
+    def get_execution_time(self):
+        """ Display the results of our execution timer. """
+        self.execution_time = self.end_time - self.start_time
+        message('Total execution time was {} ms.'.format(self.execution_time))
+
+    def start_timer(self):
+        """ Start our timer used to determine execution speed. """
+        self.start_time = datetime.datetime.now()
+
+    def stop_timer(self):
+        """ Stop our timer used to determine execution speed. """
+        self.end_time = datetime.datetime.now()
 
     def is_not_used(self):
         """ Useful to get rid of the warning messages about 'self' not being used in a method. """
@@ -114,5 +126,9 @@ if __name__ == '__main__':
     init(autoreset=True)
     message('Initiating Process')
     xc = ExcelPY('input_data.xlsx', 'output_data.xlsx')
+    xc.start_timer()
     xc.generate_data_dump()
+    xc.stop_timer()
+    xc.get_execution_time()
     del xc
+    exit(0)

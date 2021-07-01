@@ -1,7 +1,9 @@
 import datetime
+import argparse
+
 from openpyxl import load_workbook, Workbook
 from os import system, name
-from colorama import init, Fore
+from colorama import init, Fore, Style
 
 
 # from random import randint
@@ -29,6 +31,10 @@ class ExcelPY:
         self.wb_incident = Workbook()
         self.wb_destination = Workbook()
 
+        # user supplied options (arguments)
+        self.arg_data = False  # generate test data only
+
+        # general application options
         self.test_data_row_count = 500  # how many rows of test data we will be creating
 
     def __del__(self):
@@ -58,7 +64,10 @@ class ExcelPY:
         self.wb_destination.close()
 
     def generate_test_data(self):
-        """ Populate our input file with random test data """
+        """ Populate our input file with random test data. We will default so that the data in the dump files
+        matches that in the destination file. This allows us to start from a known point and we can then change
+        data anywhere to test the application.
+        """
         message('Generating input file with random values')
         if not self.open_workbooks():
             exit()
@@ -82,6 +91,12 @@ class ExcelPY:
         message('Completed generating input file')
 
     def populate_sheet(self, wb, ws, fn, tag):
+        """ PARAMETERS:
+        wb - workbook
+        ws - worksheet (the destination file has multiple sheets)
+        fn - the file name to save our changes in
+        tag - extra info to add to the generated data
+        """
         ws.delete_rows(2, ws.max_row + 1)
 
         for x in range(2, self.test_data_row_count + 1):  # now lets generate some cell data
@@ -89,10 +104,6 @@ class ExcelPY:
                 ws.cell(row=x, column=y).value = '[{}]:{}:{}'.format(tag, x, y)
 
         wb.save(fn)
-        # ws_hdr = list()
-        # get a list of column headers so we can use them for searching
-        # for row in ws.iter_rows(min_row=1, max_col=ws.max_column, max_row=1, values_only=True):
-        #     ws_hdr.append(row)
 
     def get_execution_time(self):
         """ Display the results of our execution timer. """
@@ -111,6 +122,69 @@ class ExcelPY:
         """ Useful to get rid of the warning messages about 'self' not being used in a method. """
         pass
 
+    def parse_args(self):
+        """ By default without args we will process the files, but we will also give options via
+         command line arguments for things like generating test data.
+         """
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-d', '--data', action='store_true',
+                            dest='data', help='Generate test data (overwrites all files)',
+                            default=False)
+        args = parser.parse_args()
+        self.arg_data = args.data
+
+        if xc.arg_data:  # did the user request to generate test data?
+            choice = input(Fore.YELLOW + 'This option will ' + Fore.RED +
+                           '*OVERWRITE ALL FILES* ' + Fore.YELLOW + 'you sure (y/n)?')
+            if choice.upper() == 'Y':
+                xc.generate_test_data()
+            else:
+                xc.arg_data = False
+        else:
+            self.process_workbooks()
+
+    def process_workbooks(self):
+        """ Process all the sheets in our workbooks looking for changes. """
+        message('Initializing workbook processing')
+        if not self.open_workbooks():
+            exit()
+
+        # self.parse_sheet(self.wb_alm, self.wb_alm.active, self.fn_alm, 'alm')
+        # self.parse_sheet(self.wb_defect, self.wb_defect.active, self.fn_defect, 'dfc')
+        self.parse_sheet(self.wb_incident, self.wb_destination['Hypercare Incidents'], self.fn_incident)
+        # self.parse_sheet(self.wb_enhancement, self.wb_enhancement.active, self.fn_enhancement, 'enh')
+
+    def parse_sheet(self, wb, ws, fn):
+        """ PARMS:
+        wb = one of our dump workbooks that we will use as data input
+        ws = the name of the worksheet in our output file that should be parsed
+        fn = the name of the dump file being parsed
+        """
+        message('Processing dump file {} -> {}:'.format(fn.upper(), self.fn_destination.upper()))
+        dump_headers = []
+        dest_headers = []
+
+        # get a list of dump column headers so we can use them for searching
+        for cell in wb.active[1]:
+            dump_headers.append(str(cell.value))
+
+        # get a list of destination column headers so we can use them for searching
+        for cell in ws[1]:
+            dest_headers.append(str(cell.value))
+
+        # let's case-sensitive check our column headers for differences if any.
+        s1 = set(dump_headers)
+        s2 = set(dest_headers)
+        if s1 != s2:
+            s1_diff = (s1 - s2)
+            s2_diff = (s2 - s1)
+            warning('The dump file and destination file have different column headers.')
+            warning('{} exclusively contains {}: '.format(fn.upper(), s1_diff))
+            warning('{} exclusively contains {}: '.format(self.fn_destination.upper(), s2_diff))
+            warning('Be sure to check for *misspellings* and *capitalization*.')
+
+        # now let's enumerate our dump file and propagate any changes
+
 
 def clear_screen():
     """ Clear the screen taking into account operating system. """
@@ -122,17 +196,17 @@ def clear_screen():
 
 def message(value=''):
     """ Format general messages including attributes. """
-    print(Fore.GREEN + '+++ ' + value + ' +++')
+    print(Fore.GREEN + '+++ ' + value)
 
 
 def error(value=''):
     """ Format error messages including attributes. """
-    print(Fore.RED + '!!! ' + value + ' !!!')
+    print(Fore.RED + '!!! ' + value)
 
 
 def warning(value=''):
     """ Format warning messages including attributes. """
-    print(Fore.YELLOW + '!!! ' + value + ' !!!')
+    print(Fore.YELLOW + '-^- ' + value)
 
 
 if __name__ == '__main__':
@@ -141,7 +215,7 @@ if __name__ == '__main__':
     message('Initiating Process')
     xc = ExcelPY()
     xc.start_timer()
-    xc.generate_test_data()
+    xc.parse_args()
     xc.stop_timer()
     xc.get_execution_time()
     del xc

@@ -141,39 +141,39 @@ class ExcelPY:
             else:
                 xc.arg_data = False
         else:
-            self.process_workbooks()
+            self.process_dump_files()
 
-    def process_workbooks(self):
+    def process_dump_files(self):
         """ Process all the sheets in our workbooks looking for changes. """
         message('Initializing workbook processing')
         if not self.open_workbooks():
             exit()
 
-        # self.parse_sheet(self.wb_alm, self.wb_alm.active, self.fn_alm, 'alm')
-        # self.parse_sheet(self.wb_defect, self.wb_defect.active, self.fn_defect, 'dfc')
-        self.parse_sheet(self.wb_incident, 'Hypercare Incidents', self.fn_incident)
-        # self.parse_sheet(self.wb_incident, self.wb_destination['Hypercare Incidents'], self.fn_incident)
-        # self.parse_sheet(self.wb_enhancement, self.wb_enhancement.active, self.fn_enhancement, 'enh')
+        self.parse_dump_file(self.wb_incident, 'Hypercare Incidents', self.fn_incident)
+        self.parse_dump_file(self.wb_alm, 'ALM Defects', self.fn_alm)
+        self.parse_dump_file(self.wb_defect, 'Hypercare Defects', self.fn_defect)
+        self.parse_dump_file(self.wb_enhancement, 'Hypercare Enhancements', self.fn_enhancement)
 
-    def parse_sheet(self, wb, sheet, fn):
+    def parse_dump_file(self, wb_dump, sheet, fn):
         """ PARAMETERS:
         wb = one of our dump workbooks that we will use as data input
         ws = the name of the worksheet in our output file that should be parsed
         fn = the name of the dump file being parsed
         """
         message('Processing dump file [{}] -> [{}]:'.format(fn.upper(), self.fn_destination.upper()))
-        dump_headers = []
-        dest_headers = []
+        dump_headers = []   # column headers from our dump file
+        dest_headers = []   # column headers from our destination file
+        messages = []   # keep track of messages displayed so we only see them once
 
         # set the active worksheet in destination using the wsn parameter
-        ws = self.wb_destination[sheet]
+        ws_dest = self.wb_destination[sheet]
 
         # get a list of dump column headers so we can use them for searching
-        for cell in wb.active[1]:
+        for cell in wb_dump.active[1]:
             dump_headers.append(str(cell.value))
 
         # get a list of destination column headers so we can use them for searching
-        for cell in ws[1]:
+        for cell in ws_dest[1]:
             dest_headers.append(str(cell.value))
 
         # let's case-sensitive check our column headers for differences if any.
@@ -185,60 +185,80 @@ class ExcelPY:
             warning('The dump file and destination file have different column headers.')
             warning('{} exclusively contains {}: '.format(fn.upper(), s1_diff))
             warning('{} exclusively contains {}: '.format(self.fn_destination.upper(), s2_diff))
-            warning('Be sure to check for *misspellings* and *capitalization*.')
+            warning('Be sure to check for misspellings, capitalization, and spaces.')
             warning('Unmatched column headers regardless of reason WILL NOT be updated.')
 
         # now let's enumerate our dump file and propagate any changes skipping header row.
-        for dump_row in range(2, wb.active.max_row + 1):
+        for dump_row in range(2, wb_dump.active.max_row + 1):
             # now enumerate each cell in the current row
-            for dump_cell in wb.active[dump_row]:
+            for dump_cell in wb_dump.active[dump_row]:
                 haystack = dump_headers[dump_cell.column - 1]
                 needle = dump_cell.value
-                # print('needle "{}" - haystack "{}"'.format(needle, haystack))
-                # we now have the value for the current row, column combination so see if it matches destination
-                result = self.find_value_in_column(sheet, haystack, needle, fn)
-                message(result['msg'])
 
-    def find_value_in_column(self, sheet, haystack, needle, fn):
+                # we now have the value for the current row, column combination so see if it matches destination
+                result = self.find_value_in_destination_column(sheet, haystack, needle, fn)
+
+                # now take the appropriate action based upon our results
+                if result['code'] == 0:
+                    # everything worked as expected
+                    # message(result['msg'])
+                    pass
+                elif result['code'] == 1:
+                    # we need to update the cell in destination
+                    pass
+                elif result['code'] == 2:
+                    # we did not find the column header in destination
+                    if messages.count(result['msg']) == 0:
+                        # add this message to our dictionary then display it
+                        messages.append(result['msg'])
+                        error(result['msg'])
+                else:
+                    error(result['msg'])
+
+        # if we did not display any error messages then show this
+        if len(messages) == 0:
+            message('Successfully Processed [{}].'.format(fn.upper()))
+
+    def find_value_in_destination_column(self, sheet, haystack, needle, dump_fn):
         """PARAMETERS:
-        tab - the tab (worksheet) within wb to search
-        key - the column to search
-        value - the value to find
+        sheet - the tab name (worksheet) we will be searching
+        haystack - the column to search
+        needle - the value to find
+        fn -
 
         NOTES:
-            This method will search our destination excel file on the supplied sheet.
+            This method will search our destination excel file for 'needle' in 'haystack' on 'sheet'.
         """
         self.is_not_used()
-        wb = self.wb_destination
-        wb.active = wb[sheet]
+        wb_dest = self.wb_destination
+        wb_dest.active = wb_dest[sheet]
         column_found = False
         result = {'code': 0, 'coordinates': '', 'msg': ''}
 
         # loop through all the column headers looking for our match to haystack
-        for col in range(1, wb.active.max_column + 1):
-            column = wb.active.cell(1, col).value
+        for col in range(1, wb_dest.active.max_column + 1):
+            column = wb_dest.active.cell(1, col).value
             if column == haystack:  # we found the correct column to search so now let's search its rows
                 column_found = True
-                for row in range(2, wb.active.max_row + 1):
-                    value = wb.active.cell(row, col).value
+                for row in range(2, wb_dest.active.max_row + 1):
+                    value = wb_dest.active.cell(row, col).value
                     if value == needle:
-                        cell = wb.active.cell(row, col)
+                        cell = wb_dest.active.cell(row, col)
                         coordinates = cell.column_letter + str(cell.row)
-                        # print('Found {} at coordinates {}.'.format(needle, coordinates))
                         result['code'] = 0
                         result['coordinates'] = coordinates
-                        result['msg'] = 'Successfully found and matched the value.'
+                        result['msg'] = 'Found \'{}\' at \'{}\'.'.format(needle, coordinates)
                         return result
 
         # we did not find the needle in the haystack so return nothing
         if column_found:
             # we found the column but not the value so it either did not match or was empty
             result['code'] = 1
-            result['msg'] = 'Searched for "{}" in "{}" and was unsuccessful'.format(str(needle), str(haystack))
+            result['msg'] = 'Searched for \'{}\' in \'{}\' and was unsuccessful'.format(needle, haystack)
         else:
             # we were not able to find a column header in destination that matched
             result['code'] = 2
-            result['msg'] = 'Searched for column "{}" in "{}" and was unsuccessful'.format(haystack, fn)
+            result['msg'] += 'Skipping: [{}].\'{}\''.format(dump_fn.lower(), haystack)
         return result
 
 

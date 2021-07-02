@@ -35,7 +35,7 @@ class ExcelPY:
         self.arg_data = False  # generate test data only
 
         # general application options
-        self.test_data_row_count = 500  # how many rows of test data we will be creating
+        self.test_data_row_count = 50  # how many rows of test data we will be creating
 
     def __del__(self):
         """ Perform cleanup operations when we destroy our class instance. """
@@ -101,7 +101,7 @@ class ExcelPY:
 
         for x in range(2, self.test_data_row_count + 1):  # now lets generate some cell data
             for y in range(1, ws.max_column + 1):  # worksheet columns are not zero-based so add 1
-                ws.cell(row=x, column=y).value = '[{}]:{}:{}'.format(tag, x, y)
+                ws.cell(row=x, column=y).value = '[{}] {}:{}'.format(tag, x, y)
 
         wb.save(fn)
 
@@ -151,18 +151,22 @@ class ExcelPY:
 
         # self.parse_sheet(self.wb_alm, self.wb_alm.active, self.fn_alm, 'alm')
         # self.parse_sheet(self.wb_defect, self.wb_defect.active, self.fn_defect, 'dfc')
-        self.parse_sheet(self.wb_incident, self.wb_destination['Hypercare Incidents'], self.fn_incident)
+        self.parse_sheet(self.wb_incident, 'Hypercare Incidents', self.fn_incident)
+        # self.parse_sheet(self.wb_incident, self.wb_destination['Hypercare Incidents'], self.fn_incident)
         # self.parse_sheet(self.wb_enhancement, self.wb_enhancement.active, self.fn_enhancement, 'enh')
 
-    def parse_sheet(self, wb, ws, fn):
-        """ PARMS:
+    def parse_sheet(self, wb, sheet, fn):
+        """ PARAMETERS:
         wb = one of our dump workbooks that we will use as data input
         ws = the name of the worksheet in our output file that should be parsed
         fn = the name of the dump file being parsed
         """
-        message('Processing dump file {} -> {}:'.format(fn.upper(), self.fn_destination.upper()))
+        message('Processing dump file [{}] -> [{}]:'.format(fn.upper(), self.fn_destination.upper()))
         dump_headers = []
         dest_headers = []
+
+        # set the active worksheet in destination using the wsn parameter
+        ws = self.wb_destination[sheet]
 
         # get a list of dump column headers so we can use them for searching
         for cell in wb.active[1]:
@@ -182,8 +186,60 @@ class ExcelPY:
             warning('{} exclusively contains {}: '.format(fn.upper(), s1_diff))
             warning('{} exclusively contains {}: '.format(self.fn_destination.upper(), s2_diff))
             warning('Be sure to check for *misspellings* and *capitalization*.')
+            warning('Unmatched column headers regardless of reason WILL NOT be updated.')
 
-        # now let's enumerate our dump file and propagate any changes
+        # now let's enumerate our dump file and propagate any changes skipping header row.
+        for dump_row in range(2, wb.active.max_row + 1):
+            # now enumerate each cell in the current row
+            for dump_cell in wb.active[dump_row]:
+                haystack = dump_headers[dump_cell.column - 1]
+                needle = dump_cell.value
+                # print('needle "{}" - haystack "{}"'.format(needle, haystack))
+                # we now have the value for the current row, column combination so see if it matches destination
+                result = self.find_value_in_column(sheet, haystack, needle, fn)
+                message(result['msg'])
+
+    def find_value_in_column(self, sheet, haystack, needle, fn):
+        """PARAMETERS:
+        tab - the tab (worksheet) within wb to search
+        key - the column to search
+        value - the value to find
+
+        NOTES:
+            This method will search our destination excel file on the supplied sheet.
+        """
+        self.is_not_used()
+        wb = self.wb_destination
+        wb.active = wb[sheet]
+        column_found = False
+        result = {'code': 0, 'coordinates': '', 'msg': ''}
+
+        # loop through all the column headers looking for our match to haystack
+        for col in range(1, wb.active.max_column + 1):
+            column = wb.active.cell(1, col).value
+            if column == haystack:  # we found the correct column to search so now let's search its rows
+                column_found = True
+                for row in range(2, wb.active.max_row + 1):
+                    value = wb.active.cell(row, col).value
+                    if value == needle:
+                        cell = wb.active.cell(row, col)
+                        coordinates = cell.column_letter + str(cell.row)
+                        # print('Found {} at coordinates {}.'.format(needle, coordinates))
+                        result['code'] = 0
+                        result['coordinates'] = coordinates
+                        result['msg'] = 'Successfully found and matched the value.'
+                        return result
+
+        # we did not find the needle in the haystack so return nothing
+        if column_found:
+            # we found the column but not the value so it either did not match or was empty
+            result['code'] = 1
+            result['msg'] = 'Searched for "{}" in "{}" and was unsuccessful'.format(str(needle), str(haystack))
+        else:
+            # we were not able to find a column header in destination that matched
+            result['code'] = 2
+            result['msg'] = 'Searched for column "{}" in "{}" and was unsuccessful'.format(haystack, fn)
+        return result
 
 
 def clear_screen():
@@ -206,7 +262,7 @@ def error(value=''):
 
 def warning(value=''):
     """ Format warning messages including attributes. """
-    print(Fore.YELLOW + '-^- ' + value)
+    print(Fore.YELLOW + '--- ' + value)
 
 
 if __name__ == '__main__':

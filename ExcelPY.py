@@ -1,9 +1,16 @@
 import datetime
 import argparse
 
-from openpyxl import load_workbook, Workbook
-from os import system, name
-from colorama import init, Fore
+from openpyxl import load_workbook
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill
+from openpyxl.styles import Border
+from openpyxl.styles import Font
+from openpyxl.styles import Color
+from os import system
+from os import name
+from colorama import init
+from colorama import Fore
 from random import randint
 
 
@@ -22,7 +29,7 @@ class ExcelPY:
         self.fn_defect = 'dump-defects.xlsx'
         self.fn_enhancement = 'dump-enhancements.xlsx'
         self.fn_incident = 'dump-incidents.xlsx'
-        self.fn_destination = 'cardinal-health-data-tracking.xlsx'
+        self.fn_destination = 'capacity-tracker.xlsx'
 
         # workbook handles
         self.wb_alm = Workbook()
@@ -33,9 +40,12 @@ class ExcelPY:
 
         # user supplied options (arguments)
         self.arg_data = False  # generate test data only
+        self.check = False  # allows us to run the app to test files without writing to them
 
         # general application options
         self.test_data_row_count = 50  # how many rows of test data we will be creating
+        self.rows_updated = 0
+        self.rows_appended = 0
 
     def __del__(self):
         """ Perform cleanup operations when we destroy our class instance. """
@@ -64,56 +74,67 @@ class ExcelPY:
         self.wb_destination.close()
 
     def generate_test_data(self):
-        """ Populate our input file with random test data. We will default so that the data in the dump files
-        matches that in the destination file. This allows us to start from a known point and we can then change
-        data anywhere to test the application.
+        """ Populate our input file with random test data. Due to the different number of columns in the files
+        and the random nature of this method there will likely be zero matching data between the files.
         """
         message('Generating input file with random values')
         if not self.open_workbooks():
             exit()
 
         # populate our data dump input files
-        self.populate_sheet(self.wb_alm, self.wb_alm.active, self.fn_alm, 'alm')
-        self.populate_sheet(self.wb_defect, self.wb_defect.active, self.fn_defect, 'dfc')
-        self.populate_sheet(self.wb_incident, self.wb_incident.active, self.fn_incident, 'inc')
-        self.populate_sheet(self.wb_enhancement, self.wb_enhancement.active, self.fn_enhancement, 'enh')
-
-        # now populate our main reporting file with data that perfectly matches our dumps
-        self.populate_sheet(self.wb_destination, self.wb_destination['ALM Defects'],
-                            self.fn_destination, 'alm')
-        self.populate_sheet(self.wb_destination, self.wb_destination['Hypercare Defects'],
-                            self.fn_destination, 'dfc')
-        self.populate_sheet(self.wb_destination, self.wb_destination['Hypercare Incidents'],
-                            self.fn_destination, 'inc')
-        self.populate_sheet(self.wb_destination, self.wb_destination['Hypercare Enhancements'],
-                            self.fn_destination, 'enh')
+        self.populate_sheet(self.wb_alm, self.wb_alm.active, self.fn_alm, 'ALM Defects', 'ALM')
+        self.populate_sheet(self.wb_defect, self.wb_defect.active, self.fn_defect, 'Hypercare Defects', 'DFC')
+        self.populate_sheet(self.wb_incident, self.wb_incident.active, self.fn_incident, 'Hypercare Incidents', 'INC')
+        self.populate_sheet(self.wb_enhancement, self.wb_enhancement.active, self.fn_enhancement,
+                            'Hypercare Enhancements', 'ENH')
 
         message('Completed generating input file')
 
-    def populate_sheet(self, wb, ws, fn, tag):
+    def populate_sheet(self, wb, ws, fn, tab, extra):
         """ PARAMETERS:
         wb - workbook
         ws - worksheet (the destination file has multiple sheets)
         fn - the file name to save our changes in
-        tag - extra info to add to the generated data
+        tab - name of the destination tab (sheet) to write to
+        extra - extra info to add to the generated data
         """
         ws.delete_rows(2, ws.max_row + 1)
+        self.wb_destination.active = self.wb_destination[tab]
+        self.wb_destination.active.delete_rows(2, self.wb_destination.active.max_row + 1)
 
         try:
+            # this loop is for the dump file
             for x in range(2, self.test_data_row_count + 1):  # now lets generate some cell data
                 for y in range(1, ws.max_column + 1):  # worksheet columns are not zero-based so add 1
-                    rand_x = randint(x, 99)
-                    rand_y = randint(y, 99)
-                    ws.cell(row=x, column=y).value = '[{}] {}:{}'.format(tag, rand_x, rand_y)
+                    rand_x = randint(x, 999)
+                    rand_y = randint(y, 999)
+                    buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
+                    ws.cell(row=x, column=y).value = buffer
+                    if y == 1:  # only write to destination the first time through so keys match
+                        self.wb_destination.active.cell(row=x, column=1).value = buffer
+
+                # this loop is for the destination file
+                for y in range(2, ws.max_column + 1):  # worksheet columns are not zero-based so add 1
+                    rand_x = randint(x, 999)
+                    rand_y = randint(y, 999)
+                    buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
+                    self.wb_destination.active.cell(row=x, column=y).value = buffer
+
         except Exception as e:
-            print(str(e))
+            str(e)
 
         wb.save(fn)
+        self.wb_destination.save(self.fn_destination)
 
     def get_execution_time(self):
         """ Display the results of our execution timer. """
         self.execution_time = self.end_time - self.start_time
-        message('Total execution time was {} ms.'.format(self.execution_time))
+
+        print('\n')
+        message('*****************************************************************************')
+        message('Updates: {} Creations: {} Execution Time: {} ms.'.format(self.rows_updated, self.rows_appended,
+                                                                          self.execution_time))
+        message('*****************************************************************************')
 
     def start_timer(self):
         """ Start our timer used to determine execution speed. """
@@ -135,8 +156,12 @@ class ExcelPY:
         parser.add_argument('-d', '--data', action='store_true',
                             dest='data', help='Generate test data (overwrites all files)',
                             default=False)
+        parser.add_argument('-c', '--check', action='store_true',
+                            dest='check', help='Check files without modifying them.',
+                            default=False)
         args = parser.parse_args()
         self.arg_data = args.data
+        self.check = args.check
 
         if xc.arg_data:  # did the user request to generate test data?
             choice = input(Fore.YELLOW + 'This option will ' + Fore.RED +
@@ -150,16 +175,25 @@ class ExcelPY:
 
     def process_dump_files(self):
         """ Process all the sheets in our workbooks looking for changes. """
-        message('Initializing workbook processing')
         if not self.open_workbooks():
             exit()
 
-        # self.parse_dump_file(self.wb_incident.active, self.wb_destination['Hypercare Incidents'], self.fn_incident)
+        message('*****************************************************************************')
+        message('Only columns that exist in both the dump and destination file will be synced.')
+        message('They must also match exactly including spelling and capitalization.')
+        message('*****************************************************************************')
+
         self.wb_destination.active = self.wb_destination['Hypercare Incidents']
         self.parse_dump_file(self.wb_incident.active, self.wb_destination.active, self.fn_incident)
-        # self.parse_dump_file(self.wb_alm, 'ALM Defects', self.fn_alm)
-        # self.parse_dump_file(self.wb_defect, 'Hypercare Defects', self.fn_defect)
-        # self.parse_dump_file(self.wb_enhancement, 'Hypercare Enhancements', self.fn_enhancement)
+
+        self.wb_destination.active = self.wb_destination['Hypercare Defects']
+        self.parse_dump_file(self.wb_defect.active, self.wb_destination.active, self.fn_defect)
+
+        self.wb_destination.active = self.wb_destination['ALM Defects']
+        self.parse_dump_file(self.wb_alm.active, self.wb_destination.active, self.fn_alm)
+
+        self.wb_destination.active = self.wb_destination['Hypercare Enhancements']
+        self.parse_dump_file(self.wb_enhancement.active, self.wb_destination.active, self.fn_enhancement)
 
     def parse_dump_file(self, ws_dump, ws_dest, fn_dump):
         """ PARAMETERS:
@@ -167,10 +201,12 @@ class ExcelPY:
         ws_dest = the name of the worksheet in our output file that should be parsed
         fn_dump = the name of the dump file being parsed
         """
-        message('BEGIN: [{}] -> [{}]:'.format(fn_dump.upper(), self.fn_destination.upper()))
+        message('BEGIN: [{}] -> [{}]:'.format(fn_dump.upper(), self.fn_destination.upper()), True)
         dump_headers = {}  # column headers from our dump file
         dest_headers = {}  # column headers from our destination file
         comm_headers = {}  # column headers common to both files
+        rows_updated = 0
+        rows_appended = 0
 
         # get a list of dump column headers so we can use them for searching
         for x, cell in enumerate(ws_dump[1]):
@@ -201,42 +237,68 @@ class ExcelPY:
         if s1 != s2:
             s1_diff = (s1 - s2)
             s2_diff = (s2 - s1)
-            warning('The dump file and destination file have different column headers.')
-            warning('{} exclusively contains {}: '.format(fn_dump.upper(), s1_diff))
-            warning('{} exclusively contains {}: '.format(self.fn_destination.upper(), s2_diff))
-            warning('Be sure to check for misspellings, capitalization, and spaces.')
-            warning('Unmatched column headers regardless of reason WILL NOT be updated.')
+            # warning('The dump file and destination file have different column headers.')
+            if len(s1_diff) > 0:
+                # warning('{} exclusively contains {}: '.format(fn_dump.upper(), s1_diff))
+                warning('{} exclusively contains the following columns: '.format(fn_dump.upper()))
+                for x, item in enumerate(s1_diff):
+                    warning('\t{}. \'{}\''.format(x + 1, str(item)))
+            if len(s2_diff) > 0:
+                # warning('{} exclusively contains {}: '.format(self.fn_destination.upper(), s2_diff))
+                warning('{} exclusively contains the following columns: '.format(self.fn_destination.upper()))
+                for x, item in enumerate(s2_diff):
+                    warning('\t{}. \'{}\''.format(x + 1, str(item)))
+            # warning('Be sure to check for misspellings, capitalization, and spaces.')
+            # warning('Unmatched column headers regardless of reason WILL NOT be updated.')
 
-        for x, row1 in enumerate(ws_dump.values):
+        for x, row1 in enumerate(ws_dump.values):  # enumerate each row in our dump file
             key1 = row1[0]
             match = False
-            for y, row2 in enumerate(ws_dest.values):
+            for y, row2 in enumerate(ws_dest.values):  # enumerate each row in our destination file
                 key2 = row2[0]
-                if key1 == key2:
+                if key1 == key2:  # check to see if we have matched key fields
                     match = True
                     break
 
             if x > 0:  # zero is our header row
                 dump_row = x + 1
                 dest_row = y + 1
-                for key, value in comm_headers.items():
+                for key, value in comm_headers.items():  # we matched keys so now enumerate common headers
                     dump_col = dump_headers[key]
                     dest_col = value
                     dump_val = ws_dump.cell(dump_row, dump_col).value
                     dest_val = ws_dest.cell(dest_row, dest_col).value
+                    this = ws_dest.cell(dest_row, dest_col)
+                    if match:  # we matched keys we will loop and update cells
+                        if dump_val != dest_val:
+                            this.value = dump_val
+                            this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
+                            this.font = Font(name='Cantrell', size=12, color='2e2e2e', bold=False, italic=False)
+                            rows_updated += 1
+                        else:
+                            this.fill = PatternFill(fill_type='none')
+                            this.font = Font(name='Cantrell', size=12, color=None, bold=False, italic=False)
+                    else:
+                        # we did not match keys so loop and append cells
+                        new_key = ws_dest.cell(dest_row, 1)
+                        new_key.value = key1
 
-                # print('current cell: {}, dump cell: '.format(row1[0]))
-                if not match:
-                    if dump_val != dest_val:
-                        print('key: \'{}\' dump: [{}:{}] \'{}\' dest: [{}:{}] \'{}\''.format(key1, dump_row, dump_col,
-                                                                                             dump_val, dest_row,
-                                                                                             dest_col, dest_val))
-                else:
-                    pass
+                        this.value = dump_val
+                        new_key.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
+                        new_key.font = Font(name='Cantrell', size=12, color='2e2e2e', bold=False, italic=False)
+                        this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
+                        this.font = Font(name='Cantarell', size=12, color='2e2e2e', bold=False, italic=False)
+                        rows_appended += 1
 
         # save our workbook with all changes
-        message('END [{}]'.format(fn_dump.upper()))
-        # self.wb_destination.save(self.fn_destination)
+        self.rows_updated += rows_updated
+        self.rows_appended += rows_appended
+        message('END: [{}] Updated: {} Creations: {}'.format(fn_dump.upper(), rows_updated, rows_appended))
+
+        # set the active worksheet so it opens on this tab
+        if not self.check:
+            self.wb_destination.active = self.wb_destination['Hypercare Incidents']
+            self.wb_destination.save(self.fn_destination)
 
     def worksheet_has_duplicate_keys(self, ws, fn):
         self.is_not_used()
@@ -256,7 +318,7 @@ class ExcelPY:
                 results[key] = 'occurrences: ' + str(value)
 
         if len(results.keys()) > 0:
-            error('[{}] contains the following duplicate keys in the first column:'.format(fn.upper()))
+            error('[{}] ({}) contains the following duplicate keys in the first column:'.format(fn.upper(), ws.title))
             error(str(results))
             return True
         else:
@@ -298,25 +360,30 @@ def clear_screen():
         system('clear')
 
 
-def message(value=''):
+def message(value='', line_before=False):
     """ Format general messages including attributes. """
+    if line_before:
+        print('\n')
     print(Fore.GREEN + '+++ ' + value)
 
 
-def error(value=''):
+def error(value='', line_before=False):
     """ Format error messages including attributes. """
+    if line_before:
+        print('\n')
     print(Fore.RED + '!!! ' + value)
 
 
-def warning(value=''):
+def warning(value='', line_before=False):
     """ Format warning messages including attributes. """
+    if line_before:
+        print('\n')
     print(Fore.YELLOW + '--- ' + value)
 
 
 if __name__ == '__main__':
     clear_screen()
     init(autoreset=True)
-    message('Initiating Process')
     xc = ExcelPY()
     xc.start_timer()
     xc.parse_args()

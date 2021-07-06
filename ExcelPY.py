@@ -1,9 +1,9 @@
 import datetime
 import argparse
 
-from openpyxl import load_workbook, Workbook, utils
+from openpyxl import load_workbook, Workbook
 from os import system, name
-from colorama import init, Fore, Style
+from colorama import init, Fore
 from random import randint
 
 
@@ -167,7 +167,7 @@ class ExcelPY:
         ws_dest = the name of the worksheet in our output file that should be parsed
         fn_dump = the name of the dump file being parsed
         """
-        message('Processing dump file [{}] -> [{}]:'.format(fn_dump.upper(), self.fn_destination.upper()))
+        message('BEGIN: [{}] -> [{}]:'.format(fn_dump.upper(), self.fn_destination.upper()))
         dump_headers = {}  # column headers from our dump file
         dest_headers = {}  # column headers from our destination file
         comm_headers = {}  # column headers common to both files
@@ -180,11 +180,19 @@ class ExcelPY:
         for x, cell in enumerate(ws_dest[1]):
             dest_headers[cell.value] = x + 1
 
-        # get a list of column headers that are common to both sheets
+        # get a list of column headers from both sheets using column locations from destination
         for key1, val1 in dump_headers.items():
             for key2, val2 in dest_headers.items():
                 if key1 == key2:
                     comm_headers[key2] = val2
+
+        # now parse our dump file to check for duplicate 'keys'
+        if self.worksheet_has_duplicate_keys(ws_dump, fn_dump):
+            return
+
+        # now parse our destination file to check for duplicate 'keys'
+        if self.worksheet_has_duplicate_keys(ws_dest, self.fn_destination):
+            return
 
         # let's case-sensitive check our column headers for differences if any.
         s1 = set(dump_headers)
@@ -208,95 +216,78 @@ class ExcelPY:
                     match = True
                     break
 
-            if x > 0:  # zero is our header rows
+            if x > 0:  # zero is our header row
+                dump_row = x + 1
+                dest_row = y + 1
+                for key, value in comm_headers.items():
+                    dump_col = dump_headers[key]
+                    dest_col = value
+                    dump_val = ws_dump.cell(dump_row, dump_col).value
+                    dest_val = ws_dest.cell(dest_row, dest_col).value
+
+                # print('current cell: {}, dump cell: '.format(row1[0]))
                 if not match:
-                    for key, value in comm_headers.items():
-                        print('key: {}, value: {}'.format(key, value))
+                    if dump_val != dest_val:
+                        print('key: \'{}\' dump: [{}:{}] \'{}\' dest: [{}:{}] \'{}\''.format(key1, dump_row, dump_col,
+                                                                                             dump_val, dest_row,
+                                                                                             dest_col, dest_val))
                 else:
                     pass
-                    # print('Update: {}'.format(key1))
 
-            # print('Key: {} Found: {}'.format(key1, match))
-
-        # # save our workbook with all changes
+        # save our workbook with all changes
+        message('END [{}]'.format(fn_dump.upper()))
         # self.wb_destination.save(self.fn_destination)
 
-    def find_value_in_destination_column(self, sheet, haystack, needle, dump_fn):
-        """PARAMETERS:
-        sheet - the tab name (worksheet) we will be searching
-        haystack - the column to search
-        needle - the value to find
-        fn -
-
-        NOTES:
-            This method will search our destination excel file for 'needle' in 'haystack' on 'sheet'.
-        """
+    def worksheet_has_duplicate_keys(self, ws, fn):
         self.is_not_used()
-        wb_dest = self.wb_destination
-        wb_dest.active = wb_dest[sheet]
-        column_found = False
-        result = {'code': 0, 'coordinates': '', 'msg': ''}
+        results = {}
 
-        # loop through all the column headers looking for our match to haystack
-        for col in range(1, wb_dest.active.max_column + 1):
-            if column_found:  # break if we already searched the requested column
-                break
-            column = wb_dest.active.cell(1, col).value
-            if column == haystack:  # we found the correct column to search so now let's search its rows
-                column_found = True
-                # now enumerate through all the rows in that column
-                for row in range(2, wb_dest.active.max_row + 1):
-                    value = wb_dest.active.cell(row, col).value
-                    if value == needle:
-                        cell = wb_dest.active.cell(row, col)
-                        coordinates = cell.column_letter + str(cell.row)
-                        result['code'] = 0
-                        result['coordinates'] = coordinates
-                        result['row'] = row
-                        result['col'] = col
-                        result['msg'] = '[{}] - Success: \'{}\' in column \'{}\' at \'{}\'.'.format(dump_fn, needle,
-                                                                                                    haystack,
-                                                                                                    coordinates)
-                        return result
+        for x in ws.iter_rows(2, ws.max_row, values_only=True):  # enumerate our worksheet keys
+            key = x[0]
+            if key in results:  # see if key is already in the dictionary
+                results[key] = results[key] + 1  # if yes then increment found counter
+            else:
+                results[key] = 1  # key wasn't in the dictionary so add it now
 
-        # we did not find the needle in the haystack so return nothing
-        if column_found:
-            # we found our column but not our value meaning this should be a new row
-            result['code'] = 1
-            result['msg'] = '[{}] - Failure: value \'{}\' was not found in column \'{}\'.'.format(dump_fn, needle,
-                                                                                                  haystack)
+        for key, value in list(results.items()):  # enumerate our keys
+            if results[key] == 1:  # if value > 1 then it is a duplicate key
+                del results[key]  # not a duplicate so remove from dictionary
+            else:
+                results[key] = 'occurrences: ' + str(value)
+
+        if len(results.keys()) > 0:
+            error('[{}] contains the following duplicate keys in the first column:'.format(fn.upper()))
+            error(str(results))
+            return True
         else:
-            # we were not able to find a column header in destination that matched
-            result['code'] = 2
-            result['msg'] += '[{}] - Failure: column \'{}\' was not found.'.format(dump_fn, haystack)
-        return result
+            return False
 
-    def find_value_in_worksheet(self, ws, needle):
-        """PARAMETERS:
-        sheet - the tab name (worksheet) we will be searching
-        haystack - the column to search
-        needle - the value to find
-
-        NOTES:
-            This method will search our destination excel file for 'needle' in 'haystack' on 'sheet'.
-        """
-        self.is_not_used()
-        result = {'code': -1, 'coordinates': '', 'msg': ''}
-
-        for col in range(1, ws.max_column + 1):
-            for row in range(1, ws.max_row + 1):
-                value = ws.cell(row, col).value
-                if value == needle:
-                    cell = ws.cell(row, col)
-                    coordinates = cell.column_letter + str(cell.row)
-                    result['code'] = 0
-                    result['coordinates'] = coordinates
-                    result['row'] = row
-                    result['col'] = col
-                    result['msg'] = ''
-                    return result
-
-        return result
+    # def find_value_in_worksheet(self, ws, needle):
+    #     """PARAMETERS:
+    #     sheet - the tab name (worksheet) we will be searching
+    #     haystack - the column to search
+    #     needle - the value to find
+    #
+    #     NOTES:
+    #         This method will search our destination excel file for 'needle' in 'haystack' on 'sheet'.
+    #     """
+    #     self.is_not_used()
+    #     result = {'code': -1, 'coordinates': '', 'msg': ''}
+    #
+    #     for col in range(1, ws.max_column + 1):
+    #         for row in range(1, ws.max_row + 1):
+    #             value = ws.cell(row, col).value
+    #             if value == needle:
+    #                 cell = ws.cell(row, col)
+    #                 coordinates = cell.column_letter + str(cell.row)
+    #                 result['code'] = 0
+    #                 result['coordinates'] = coordinates
+    #                 result['row'] = row
+    #                 result['col'] = col
+    #                 result['msg'] = ''
+    #                 return result
+    #
+    #     return result
 
 
 def clear_screen():

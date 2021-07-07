@@ -3,6 +3,7 @@ import argparse
 
 from openpyxl import load_workbook
 from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from openpyxl.styles import PatternFill
 from openpyxl.styles import Border
 from openpyxl.styles import Font
@@ -40,7 +41,7 @@ class ExcelPY:
 
         # user supplied options (arguments)
         self.arg_data = False  # generate test data only
-        self.check = False  # allows us to run the app to test files without writing to them
+        self.arg_check = False  # allows us to run the app to test files without writing to them
 
         # general application options
         self.test_data_row_count = 50  # how many rows of test data we will be creating
@@ -106,8 +107,8 @@ class ExcelPY:
             # this loop is for the dump file
             for x in range(2, self.test_data_row_count + 1):  # now lets generate some cell data
                 for y in range(1, ws.max_column + 1):  # worksheet columns are not zero-based so add 1
-                    rand_x = randint(x, 999)
-                    rand_y = randint(y, 999)
+                    rand_x = randint(100, 999)
+                    rand_y = randint(100, 999)
                     buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
                     ws.cell(row=x, column=y).value = buffer
                     if y == 1:  # only write to destination the first time through so keys match
@@ -115,13 +116,22 @@ class ExcelPY:
 
                 # this loop is for the destination file
                 for y in range(2, ws.max_column + 1):  # worksheet columns are not zero-based so add 1
-                    rand_x = randint(x, 999)
-                    rand_y = randint(y, 999)
+                    rand_x = randint(100, 999)
+                    rand_y = randint(100, 999)
                     buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
                     self.wb_destination.active.cell(row=x, column=y).value = buffer
 
-        except Exception as e:
+            # now set the column widths
+            for x in range(1, ws.max_column + 1):
+                ws.column_dimensions[get_column_letter(x)].width = 15
+
+            for x in range(1, self.wb_destination.active.max_column + 1):
+                self.wb_destination.active.column_dimensions[get_column_letter(x)].width = 15
+
+        except IndexError as e:
             str(e)
+        except Exception as e:
+            error(str(e))
 
         wb.save(fn)
         self.wb_destination.save(self.fn_destination)
@@ -161,11 +171,11 @@ class ExcelPY:
                             default=False)
         args = parser.parse_args()
         self.arg_data = args.data
-        self.check = args.check
+        self.arg_check = args.check
 
         if xc.arg_data:  # did the user request to generate test data?
             choice = input(Fore.YELLOW + 'This option will ' + Fore.RED +
-                           '*OVERWRITE ALL FILES* ' + Fore.YELLOW + 'you sure (y/n)?')
+                           '*OVERWRITE ALL FILES* ' + Fore.YELLOW + 'you sure (y/n)? ')
             if choice.upper() == 'Y':
                 xc.generate_test_data()
             else:
@@ -222,41 +232,36 @@ class ExcelPY:
                 if key1 == key2:
                     comm_headers[key2] = val2
 
-        # now parse our dump file to check for duplicate 'keys'
+        # now parse our dump file to arg_check for duplicate 'keys'
         if self.worksheet_has_duplicate_keys(ws_dump, fn_dump):
             return
 
-        # now parse our destination file to check for duplicate 'keys'
+        # now parse our destination file to arg_check for duplicate 'keys'
         if self.worksheet_has_duplicate_keys(ws_dest, self.fn_destination):
             return
 
-        # let's case-sensitive check our column headers for differences if any.
+        # let's case-sensitive arg_check our column headers for differences if any.
         s1 = set(dump_headers)
         s2 = set(dest_headers)
 
         if s1 != s2:
             s1_diff = (s1 - s2)
             s2_diff = (s2 - s1)
-            # warning('The dump file and destination file have different column headers.')
             if len(s1_diff) > 0:
-                # warning('{} exclusively contains {}: '.format(fn_dump.upper(), s1_diff))
                 warning('{} exclusively contains the following columns: '.format(fn_dump.upper()))
                 for x, item in enumerate(s1_diff):
                     warning('\t{}. \'{}\''.format(x + 1, str(item)))
             if len(s2_diff) > 0:
-                # warning('{} exclusively contains {}: '.format(self.fn_destination.upper(), s2_diff))
                 warning('{} exclusively contains the following columns: '.format(self.fn_destination.upper()))
                 for x, item in enumerate(s2_diff):
                     warning('\t{}. \'{}\''.format(x + 1, str(item)))
-            # warning('Be sure to check for misspellings, capitalization, and spaces.')
-            # warning('Unmatched column headers regardless of reason WILL NOT be updated.')
 
         for x, row1 in enumerate(ws_dump.values):  # enumerate each row in our dump file
             key1 = row1[0]
             match = False
             for y, row2 in enumerate(ws_dest.values):  # enumerate each row in our destination file
                 key2 = row2[0]
-                if key1 == key2:  # check to see if we have matched key fields
+                if key1 == key2:  # arg_check to see if we have matched key fields
                     match = True
                     break
 
@@ -273,11 +278,11 @@ class ExcelPY:
                         if dump_val != dest_val:
                             this.value = dump_val
                             this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                            this.font = Font(name='Cantrell', size=12, color='2e2e2e', bold=False, italic=False)
+                            this.font = Font(name='Ubuntu', size=10, color='2e2e2e', bold=False, italic=False)
                             rows_updated += 1
                         else:
                             this.fill = PatternFill(fill_type='none')
-                            this.font = Font(name='Cantrell', size=12, color=None, bold=False, italic=False)
+                            this.font = Font(name='Ubuntu', size=10, color=None, bold=False, italic=False)
                     else:
                         # we did not match keys so loop and append cells
                         new_key = ws_dest.cell(dest_row, 1)
@@ -285,9 +290,9 @@ class ExcelPY:
 
                         this.value = dump_val
                         new_key.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                        new_key.font = Font(name='Cantrell', size=12, color='2e2e2e', bold=False, italic=False)
+                        new_key.font = Font(name='Ubuntu', size=10, color='2e2e2e', bold=False, italic=False)
                         this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                        this.font = Font(name='Cantarell', size=12, color='2e2e2e', bold=False, italic=False)
+                        this.font = Font(name='Ubuntu', size=10, color='2e2e2e', bold=False, italic=False)
                         rows_appended += 1
 
         # save our workbook with all changes
@@ -296,7 +301,7 @@ class ExcelPY:
         message('END: [{}] Updated: {} Creations: {}'.format(fn_dump.upper(), rows_updated, rows_appended))
 
         # set the active worksheet so it opens on this tab
-        if not self.check:
+        if not self.arg_check:
             self.wb_destination.active = self.wb_destination['Hypercare Incidents']
             self.wb_destination.save(self.fn_destination)
 

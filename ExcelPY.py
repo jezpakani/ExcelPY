@@ -78,7 +78,7 @@ class ExcelPY:
         """ Populate our input file with random test data. Due to the different number of columns in the files
         and the random nature of this method there will likely be zero matching data between the files.
         """
-        message('Generating input file with random values')
+        message('Generating {} rows of test data.'.format(self.test_data_row_count))
         if not self.open_workbooks():
             exit()
 
@@ -105,7 +105,7 @@ class ExcelPY:
 
         try:
             # this loop is for the dump file
-            for x in range(2, self.test_data_row_count + 1):  # now lets generate some cell data
+            for x in range(2, self.test_data_row_count + 2):  # now lets generate some cell data
                 for y in range(1, ws.max_column + 1):
                     rand_x = randint(100, 999)
                     rand_y = randint(100, 999)
@@ -142,7 +142,7 @@ class ExcelPY:
 
         print('\n')
         message('*****************************************************************************')
-        message('Updates: {} Creations: {} Execution Time: {} ms.'.format(self.rows_updated, self.rows_appended,
+        message('[{} Updates] [{} Creations] - Execution Time: {} ms.'.format(self.rows_updated, self.rows_appended,
                                                                           self.execution_time))
         message('*****************************************************************************')
 
@@ -163,9 +163,12 @@ class ExcelPY:
          command line arguments for things like generating test data.
          """
         parser = argparse.ArgumentParser()
-        parser.add_argument('-d', '--data', action='store_true',
-                            dest='data', help='Generate test data (overwrites all files)',
-                            default=False)
+        # parser.add_argument('-d', '--data', action='store_true',
+        #                     dest='data', help='Generate test data (overwrites all files)',
+        #                     default=False)
+        parser.add_argument('-d', '--data', dest='data',
+                            help='Generate requested amount of test data.',
+                            type=int, nargs='+')
         parser.add_argument('-c', '--check', action='store_true',
                             dest='check', help='Check files without modifying them.',
                             default=False)
@@ -177,6 +180,7 @@ class ExcelPY:
             choice = input(Fore.YELLOW + 'This option will ' + Fore.RED +
                            '*OVERWRITE ALL FILES* ' + Fore.YELLOW + 'you sure (y/n)? ')
             if choice.upper() == 'Y':
+                self.test_data_row_count = int(self.arg_data[0])
                 xc.generate_test_data()
             else:
                 xc.arg_data = False
@@ -261,7 +265,6 @@ class ExcelPY:
             match = False
             for y, row2 in enumerate(ws_dest.values):  # enumerate each row in our destination file
                 key2 = row2[0]
-                print('k1: \'{}\' k2: \'{}\''.format(key1, key2))
                 if key1 == key2:  # arg_check to see if we have matched key fields
                     match = True
                     break
@@ -273,7 +276,6 @@ class ExcelPY:
                     for key, value in comm_headers.items():  # we matched keys so now enumerate common headers
                         dump_col = dump_headers[key]
                         dest_col = dest_headers[key]
-                        # dest_col = value
                         dump_val = ws_dump.cell(dump_row, dump_col).value
                         dest_val = ws_dest.cell(dest_row, dest_col).value
                         this = ws_dest.cell(dest_row, dest_col)
@@ -281,30 +283,29 @@ class ExcelPY:
                         if dump_val != dest_val:  # update the cell only if it changed
                             this.value = dump_val
                             this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                            this.font = Font(name='Ubuntu', size=11, color='2e2e2e', bold=False, italic=False)
+                            this.font = Font(name='Ubuntu', size=12, color='2e2e2e', bold=False, italic=False)
                             rows_updated += 1
                         else:  # there were no changes so reset the cell background
                             this.fill = PatternFill(fill_type='none')
-                            this.font = Font(name='Ubuntu', size=11, color=None, bold=False, italic=False)
+                            this.font = Font(name='Ubuntu', size=12, color=None, bold=False, italic=False)
                 else:  # key was not found in destination so we need to append a new row
                     for key, value in comm_headers.items():  # we matched keys so now enumerate common headers
-                        dump_col = dump_headers[key]
-                        dest_col = dest_headers[key]
-                        dump_val = ws_dump.cell(dump_row, dump_col).value
-                        this = ws_dest.cell(dest_row, dest_col)
-                        # print('key: \'{}\' dump_col: \'{}\' dump_row: \'{}\' dump_val: \'{}\' dest_row: \'{}\' dest_col: \'{}\''.format(key1, dump_col, dump_row, dump_val, dest_row, dest_col))
+                        dump_col2 = dump_headers[key]
+                        dest_col2 = dest_headers[key]
+                        dump_val2 = ws_dump.cell(dump_row, dump_col2).value
+                        this2 = ws_dest.cell(dest_row + 1, dest_col2)
 
-                        this.value = dump_val
-                        new_key.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                        new_key.font = Font(name='Ubuntu', size=10, color='2e2e2e', bold=False, italic=False)
-                        this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                        this.font = Font(name='Ubuntu', size=10, color='2e2e2e', bold=False, italic=False)
+                        this2.value = dump_val2
+                        this2.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
+                        this2.font = Font(name='Ubuntu', size=12, color='2e2e2e', bold=False, italic=False)
+                        this2.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
+                        this2.font = Font(name='Ubuntu', size=12, color='2e2e2e', bold=False, italic=False)
                         rows_appended += 1
 
         # save our workbook with all changes
         self.rows_updated += rows_updated
         self.rows_appended += rows_appended
-        message('END: [{}] Updated: {} Creations: {}'.format(fn_dump.upper(), rows_updated, rows_appended))
+        message('END: [{}]  {} Updates  {} Creations'.format(fn_dump.upper(), rows_updated, rows_appended))
 
         # set the active worksheet so it opens on this tab
         if not self.arg_check:

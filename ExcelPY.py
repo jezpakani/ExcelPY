@@ -44,7 +44,7 @@ class ExcelPY:
         self.arg_check = False  # allows us to run the app to test files without writing to them
 
         # general application options
-        self.test_data_row_count = 50  # how many rows of test data we will be creating
+        self.test_data_row_count = 3  # how many rows of test data we will be creating
         self.rows_updated = 0
         self.rows_appended = 0
 
@@ -106,7 +106,7 @@ class ExcelPY:
         try:
             # this loop is for the dump file
             for x in range(2, self.test_data_row_count + 1):  # now lets generate some cell data
-                for y in range(1, ws.max_column + 1):  # worksheet columns are not zero-based so add 1
+                for y in range(1, ws.max_column + 1):
                     rand_x = randint(100, 999)
                     rand_y = randint(100, 999)
                     buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
@@ -115,7 +115,7 @@ class ExcelPY:
                         self.wb_destination.active.cell(row=x, column=1).value = buffer
 
                 # this loop is for the destination file
-                for y in range(2, ws.max_column + 1):  # worksheet columns are not zero-based so add 1
+                for y in range(2, self.wb_destination.active.max_column + 1):
                     rand_x = randint(100, 999)
                     rand_y = randint(100, 999)
                     buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
@@ -261,32 +261,38 @@ class ExcelPY:
             match = False
             for y, row2 in enumerate(ws_dest.values):  # enumerate each row in our destination file
                 key2 = row2[0]
+                print('k1: \'{}\' k2: \'{}\''.format(key1, key2))
                 if key1 == key2:  # arg_check to see if we have matched key fields
                     match = True
                     break
 
-            if x > 0:  # zero is our header row
+            if x > 0:  # we skip zero because it is a column header and not a key value
                 dump_row = x + 1
                 dest_row = y + 1
-                for key, value in comm_headers.items():  # we matched keys so now enumerate common headers
-                    dump_col = dump_headers[key]
-                    dest_col = value
-                    dump_val = ws_dump.cell(dump_row, dump_col).value
-                    dest_val = ws_dest.cell(dest_row, dest_col).value
-                    this = ws_dest.cell(dest_row, dest_col)
-                    if match:  # we matched keys we will loop and update cells
-                        if dump_val != dest_val:
+                if match:  # if we matched keys we need to update cells with new values
+                    for key, value in comm_headers.items():  # we matched keys so now enumerate common headers
+                        dump_col = dump_headers[key]
+                        dest_col = dest_headers[key]
+                        # dest_col = value
+                        dump_val = ws_dump.cell(dump_row, dump_col).value
+                        dest_val = ws_dest.cell(dest_row, dest_col).value
+                        this = ws_dest.cell(dest_row, dest_col)
+
+                        if dump_val != dest_val:  # update the cell only if it changed
                             this.value = dump_val
                             this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                            this.font = Font(name='Ubuntu', size=10, color='2e2e2e', bold=False, italic=False)
+                            this.font = Font(name='Ubuntu', size=11, color='2e2e2e', bold=False, italic=False)
                             rows_updated += 1
-                        else:
+                        else:  # there were no changes so reset the cell background
                             this.fill = PatternFill(fill_type='none')
-                            this.font = Font(name='Ubuntu', size=10, color=None, bold=False, italic=False)
-                    else:
-                        # we did not match keys so loop and append cells
-                        new_key = ws_dest.cell(dest_row, 1)
-                        new_key.value = key1
+                            this.font = Font(name='Ubuntu', size=11, color=None, bold=False, italic=False)
+                else:  # key was not found in destination so we need to append a new row
+                    for key, value in comm_headers.items():  # we matched keys so now enumerate common headers
+                        dump_col = dump_headers[key]
+                        dest_col = dest_headers[key]
+                        dump_val = ws_dump.cell(dump_row, dump_col).value
+                        this = ws_dest.cell(dest_row, dest_col)
+                        # print('key: \'{}\' dump_col: \'{}\' dump_row: \'{}\' dump_val: \'{}\' dest_row: \'{}\' dest_col: \'{}\''.format(key1, dump_col, dump_row, dump_val, dest_row, dest_col))
 
                         this.value = dump_val
                         new_key.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
@@ -329,32 +335,30 @@ class ExcelPY:
         else:
             return False
 
-    # def find_value_in_worksheet(self, ws, needle):
-    #     """PARAMETERS:
-    #     sheet - the tab name (worksheet) we will be searching
-    #     haystack - the column to search
-    #     needle - the value to find
-    #
-    #     NOTES:
-    #         This method will search our destination excel file for 'needle' in 'haystack' on 'sheet'.
-    #     """
-    #     self.is_not_used()
-    #     result = {'code': -1, 'coordinates': '', 'msg': ''}
-    #
-    #     for col in range(1, ws.max_column + 1):
-    #         for row in range(1, ws.max_row + 1):
-    #             value = ws.cell(row, col).value
-    #             if value == needle:
-    #                 cell = ws.cell(row, col)
-    #                 coordinates = cell.column_letter + str(cell.row)
-    #                 result['code'] = 0
-    #                 result['coordinates'] = coordinates
-    #                 result['row'] = row
-    #                 result['col'] = col
-    #                 result['msg'] = ''
-    #                 return result
-    #
-    #     return result
+    def find_value_in_worksheet(self, needle, haystack, column='', key=''):
+        """PARAMETERS:
+        needle - the text to search for
+        haystack - the worksheet to search in
+        column - (optional) search only this column
+        key - (optional) search on the row this key is found in
+        """
+        self.is_not_used()
+        result = {'found': False, 'coordinates': '', 'msg': ''}
+
+        for col in range(1, haystack.max_column + 1):
+            for row in range(1, haystack.max_row + 1):
+                value = haystack.cell(row, col).value
+                if value == needle:
+                    cell = haystack.cell(row, col)
+                    coordinates = cell.column_letter + str(cell.row)
+                    result['code'] = 0
+                    result['coordinates'] = coordinates
+                    result['row'] = row
+                    result['col'] = col
+                    result['msg'] = ''
+                    return result
+
+        return result
 
 
 def clear_screen():

@@ -1,29 +1,20 @@
-import datetime
-import argparse
-
-from openpyxl import load_workbook
-from openpyxl import Workbook
+from datetime import datetime, date, time, timedelta
+from openpyxl import load_workbook, Workbook
 from openpyxl.utils import get_column_letter
-from openpyxl.styles import PatternFill
-from openpyxl.styles import Border
-from openpyxl.styles import Font
-from openpyxl.styles import Color
-from os import system
-from os import name
-from colorama import init
-from colorama import Fore
+from openpyxl.styles import PatternFill, Font
+from os import system, name
+from colorama import init, Fore
 from random import randint
 
-
-# from datetime import timedelta, date
+import argparse
 
 
 class ExcelPY:
     def __init__(self):
         """ Initialize our class and get things ready. """
-        self.start_time = datetime.datetime.now()  # start timer before first operation
-        self.end_time = datetime.datetime.now()  # end timer after last operation
-        self.execution_time = datetime.datetime.now()  # results of our timer
+        self.start_time = datetime.now()  # start timer before first operation
+        self.end_time = datetime.now()  # end timer after last operation
+        self.execution_time = datetime.now()  # results of our timer
 
         # filenames for our workbooks (spreadsheets)
         self.fn_alm = 'dump-alm.xlsx'
@@ -44,9 +35,12 @@ class ExcelPY:
         self.arg_check = False  # allows us to run the app to test files without writing to them
 
         # general application options
+        self.date_fields = ['opened', 'planned fix date']
         self.test_data_row_count = 3  # how many rows of test data we will be creating
         self.rows_updated = 0
         self.rows_appended = 0
+        self.errors = 0
+        self.warnings = 0
 
     def __del__(self):
         """ Perform cleanup operations when we destroy our class instance. """
@@ -61,7 +55,7 @@ class ExcelPY:
             self.wb_incident = load_workbook(self.fn_incident)
             self.wb_destination = load_workbook(self.fn_destination)
         except Exception as e:
-            error(str(e))
+            self.error(str(e))
             return False
 
         return True
@@ -78,18 +72,18 @@ class ExcelPY:
         """ Populate our input file with random test data. Due to the different number of columns in the files
         and the random nature of this method there will likely be zero matching data between the files.
         """
-        message('Generating {} rows of test data.'.format(self.test_data_row_count))
+        self.message('Generating {} rows of test data.'.format(self.test_data_row_count))
         if not self.open_workbooks():
             exit()
 
         # populate our data dump input files
-        self.populate_sheet(self.wb_alm, self.wb_alm.active, self.fn_alm, 'ALM Defects', 'ALM')
-        self.populate_sheet(self.wb_defect, self.wb_defect.active, self.fn_defect, 'Hypercare Defects', 'DFC')
         self.populate_sheet(self.wb_incident, self.wb_incident.active, self.fn_incident, 'Hypercare Incidents', 'INC')
         self.populate_sheet(self.wb_enhancement, self.wb_enhancement.active, self.fn_enhancement,
                             'Hypercare Enhancements', 'ENH')
+        self.populate_sheet(self.wb_defect, self.wb_defect.active, self.fn_defect, 'Hypercare Defects', 'DFC')
+        self.populate_sheet(self.wb_alm, self.wb_alm.active, self.fn_alm, 'ALM Defects', 'ALM')
 
-        message('Completed generating input file')
+        self.message('Completed generating input file')
 
     def populate_sheet(self, wb, ws, fn, tab, extra):
         """ PARAMETERS:
@@ -109,8 +103,18 @@ class ExcelPY:
                 for y in range(1, ws.max_column + 1):
                     rand_x = randint(100, 999)
                     rand_y = randint(100, 999)
-                    buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
+                    column_header = ws.cell(row=1, column=y).value
+                    if column_header is None:  # no idea why but some sheets not reporting column count correctly.
+                        break
+
+                    if column_header.lower() in self.date_fields:
+                        buffer = date.today() + timedelta(days=randint(-10, 35))
+                        buffer = buffer.strftime('%Y-%m-%d')
+                    else:
+                        buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
+
                     ws.cell(row=x, column=y).value = buffer
+
                     if y == 1:  # only write to destination the first time through so keys match
                         self.wb_destination.active.cell(row=x, column=1).value = buffer
 
@@ -118,7 +122,15 @@ class ExcelPY:
                 for y in range(2, self.wb_destination.active.max_column + 1):
                     rand_x = randint(100, 999)
                     rand_y = randint(100, 999)
-                    buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
+                    column_header = ws.cell(row=1, column=y).value
+                    if column_header is None:  # no idea why but some sheets not reporting column count correctly.
+                        break
+
+                    if column_header.lower() in self.date_fields:
+                        buffer = date.today() + timedelta(days=randint(-10, 35))
+                        buffer = buffer.strftime('%Y-%m-%d')
+                    else:
+                        buffer = '[{}] {}:{}'.format(extra, rand_x, rand_y)
                     self.wb_destination.active.cell(row=x, column=y).value = buffer
 
             # now set the column widths
@@ -129,9 +141,9 @@ class ExcelPY:
                 self.wb_destination.active.column_dimensions[get_column_letter(x)].width = 15
 
         except IndexError as e:
-            str(e)
+            self.error(str(e))
         except Exception as e:
-            error(str(e))
+            self.error(str(e))
 
         wb.save(fn)
         self.wb_destination.save(self.fn_destination)
@@ -141,18 +153,25 @@ class ExcelPY:
         self.execution_time = self.end_time - self.start_time
 
         print('\n')
-        message('*****************************************************************************')
-        message('[{} Updates] [{} Creations] - Execution Time: {} ms.'.format(self.rows_updated, self.rows_appended,
-                                                                          self.execution_time))
-        message('*****************************************************************************')
+        self.message('**[OPERATION COMPLETE]**********************************************************************')
+        if self.arg_data:
+            self.message(' Execution Time: {} ms'.format(self.execution_time))
+            self.message('********************************************************************************************')
+        else:
+            self.message('        Updates: {}'.format(self.rows_updated))
+            self.message('      Additions: {}'.format(self.rows_appended))
+            self.message('         Errors: {}'.format(self.errors))
+            self.message('       Warnings: {}'.format(self.warnings))
+            self.message(' Execution Time: {} ms'.format(self.execution_time))
+            self.message('********************************************************************************************')
 
     def start_timer(self):
         """ Start our timer used to determine execution speed. """
-        self.start_time = datetime.datetime.now()
+        self.start_time = datetime.now()
 
     def stop_timer(self):
         """ Stop our timer used to determine execution speed. """
-        self.end_time = datetime.datetime.now()
+        self.end_time = datetime.now()
 
     def is_not_used(self):
         """ Useful to get rid of the warning messages about 'self' not being used in a method. """
@@ -192,10 +211,10 @@ class ExcelPY:
         if not self.open_workbooks():
             exit()
 
-        message('*****************************************************************************')
-        message('Only columns that exist in both the dump and destination file will be synced.')
-        message('They must also match exactly including spelling and capitalization.')
-        message('*****************************************************************************')
+        self.message('*****************************************************************************')
+        self.message('Only columns that exist in both the dump and destination file will be synced.')
+        self.message('They must also match exactly including spelling and capitalization.')
+        self.message('*****************************************************************************')
 
         self.wb_destination.active = self.wb_destination['Hypercare Incidents']
         self.parse_dump_file(self.wb_incident.active, self.wb_destination.active, self.fn_incident)
@@ -203,11 +222,11 @@ class ExcelPY:
         self.wb_destination.active = self.wb_destination['Hypercare Defects']
         self.parse_dump_file(self.wb_defect.active, self.wb_destination.active, self.fn_defect)
 
-        self.wb_destination.active = self.wb_destination['ALM Defects']
-        self.parse_dump_file(self.wb_alm.active, self.wb_destination.active, self.fn_alm)
-
         self.wb_destination.active = self.wb_destination['Hypercare Enhancements']
         self.parse_dump_file(self.wb_enhancement.active, self.wb_destination.active, self.fn_enhancement)
+
+        self.wb_destination.active = self.wb_destination['ALM Defects']
+        self.parse_dump_file(self.wb_alm.active, self.wb_destination.active, self.fn_alm)
 
     def parse_dump_file(self, ws_dump, ws_dest, fn_dump):
         """ PARAMETERS:
@@ -215,7 +234,7 @@ class ExcelPY:
         ws_dest = the name of the worksheet in our output file that should be parsed
         fn_dump = the name of the dump file being parsed
         """
-        message('BEGIN: [{}] -> [{}]:'.format(fn_dump.upper(), self.fn_destination.upper()), True)
+        self.message('BEGIN: [{}] -> [{}]:'.format(fn_dump.upper(), self.fn_destination.upper()), True)
         dump_headers = {}  # column headers from our dump file
         dest_headers = {}  # column headers from our destination file
         comm_headers = {}  # column headers common to both files
@@ -252,13 +271,13 @@ class ExcelPY:
             s1_diff = (s1 - s2)
             s2_diff = (s2 - s1)
             if len(s1_diff) > 0:
-                warning('{} exclusively contains the following columns: '.format(fn_dump.upper()))
+                self.warning('{} exclusively contains the following columns: '.format(fn_dump.upper()))
                 for x, item in enumerate(s1_diff):
-                    warning('\t{}. \'{}\''.format(x + 1, str(item)))
+                    self.warning('\t{}. \'{}\''.format(x + 1, str(item)))
             if len(s2_diff) > 0:
-                warning('{} exclusively contains the following columns: '.format(self.fn_destination.upper()))
+                self.warning('{} exclusively contains the following columns: '.format(self.fn_destination.upper()))
                 for x, item in enumerate(s2_diff):
-                    warning('\t{}. \'{}\''.format(x + 1, str(item)))
+                    self.warning('\t{}. \'{}\''.format(x + 1, str(item)))
 
         for x, row1 in enumerate(ws_dump.values):  # enumerate each row in our dump file
             key1 = row1[0]
@@ -288,24 +307,38 @@ class ExcelPY:
                         else:  # there were no changes so reset the cell background
                             this.fill = PatternFill(fill_type='none')
                             this.font = Font(name='Ubuntu', size=12, color=None, bold=False, italic=False)
+
+                        if key.lower() in self.date_fields:
+                            cell_date = self.format_date(dest_val)
+                            today = self.format_date((date.today().strftime('%Y-%m-%d')))
+                            # days = self.days_between(today, cell_date)
+                            if cell_date < today:
+                                this.fill = PatternFill(start_color='ffa8d4', end_color='ffa8d4', fill_type='solid')
+
                 else:  # key was not found in destination so we need to append a new row
                     for key, value in comm_headers.items():  # we matched keys so now enumerate common headers
-                        dump_col2 = dump_headers[key]
-                        dest_col2 = dest_headers[key]
-                        dump_val2 = ws_dump.cell(dump_row, dump_col2).value
-                        this2 = ws_dest.cell(dest_row + 1, dest_col2)
+                        dump_col = dump_headers[key]
+                        dest_col = dest_headers[key]
+                        dump_val = ws_dump.cell(dump_row, dump_col).value
+                        this = ws_dest.cell(dest_row + 1, dest_col)
 
-                        this2.value = dump_val2
-                        this2.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                        this2.font = Font(name='Ubuntu', size=12, color='2e2e2e', bold=False, italic=False)
-                        this2.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                        this2.font = Font(name='Ubuntu', size=12, color='2e2e2e', bold=False, italic=False)
+                        if key.lower() in self.date_fields:
+                            dump_val = datetime.strptime(str(dump_val)[0:10], '%Y-%m-%d')
+                            this.number_format = 'yyyy-mm-dd'
+                            this.value = dump_val
+                        else:
+                            this.value = dump_val
+
+                        this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
+                        this.font = Font(name='Ubuntu', size=12, color='2e2e2e', bold=False, italic=False)
+                        this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
+                        this.font = Font(name='Ubuntu', size=12, color='2e2e2e', bold=False, italic=False)
                         rows_appended += 1
 
         # save our workbook with all changes
         self.rows_updated += rows_updated
         self.rows_appended += rows_appended
-        message('END: [{}]  {} Updates  {} Creations'.format(fn_dump.upper(), rows_updated, rows_appended))
+        self.message('END: [{}]  [Updates: {}] [Additions: {}]'.format(fn_dump.upper(), rows_updated, rows_appended))
 
         # set the active worksheet so it opens on this tab
         if not self.arg_check:
@@ -330,8 +363,9 @@ class ExcelPY:
                 results[key] = 'occurrences: ' + str(value)
 
         if len(results.keys()) > 0:
-            error('[{}] ({}) contains the following duplicate keys in the first column:'.format(fn.upper(), ws.title))
-            error(str(results))
+            self.error(
+                '[{}] ({}) contains the following duplicate keys in the first column:'.format(fn.upper(), ws.title))
+            self.error(str(results))
             return True
         else:
             return False
@@ -361,6 +395,46 @@ class ExcelPY:
 
         return result
 
+    def days_between(self, d1, d2):
+        self.is_not_used()
+        try:
+            d1 = self.format_date(d1)
+            d2 = self.format_date(d2)
+            d1 = datetime.strptime(d1, '%Y-%m-%d')
+            d2 = datetime.strptime(d2, '%Y-%m-%d')
+            return abs((d2 - d1).days)
+        except Exception as e:
+            self.error(str(e))
+
+    def format_date(self, date_val):
+        try:
+            d = date.fromisoformat(date_val[0:10])
+            # d = datetime.strptime(d, '%Y-%m-%d')
+            return d.strftime('%Y-%m-%d')
+        except Exception as e:
+            self.error((str(e)))
+
+    def message(self, value='', line_before=False):
+        """ Format general messages including attributes. """
+        self.is_not_used()
+        if line_before:
+            print('\n')
+        print(Fore.GREEN + '+++ ' + value)
+
+    def error(self, value='', line_before=False):
+        """ Format error messages including attributes. """
+        self.errors += 1
+        if line_before:
+            print('\n')
+        print(Fore.RED + '!!! ' + value)
+
+    def warning(self, value='', line_before=False):
+        """ Format warning messages including attributes. """
+        self.warnings += 1
+        if line_before:
+            print('\n')
+        print(Fore.YELLOW + '--- ' + value)
+
 
 def clear_screen():
     """ Clear the screen taking into account operating system. """
@@ -368,27 +442,6 @@ def clear_screen():
         system('cls')
     else:
         system('clear')
-
-
-def message(value='', line_before=False):
-    """ Format general messages including attributes. """
-    if line_before:
-        print('\n')
-    print(Fore.GREEN + '+++ ' + value)
-
-
-def error(value='', line_before=False):
-    """ Format error messages including attributes. """
-    if line_before:
-        print('\n')
-    print(Fore.RED + '!!! ' + value)
-
-
-def warning(value='', line_before=False):
-    """ Format warning messages including attributes. """
-    if line_before:
-        print('\n')
-    print(Fore.YELLOW + '--- ' + value)
 
 
 if __name__ == '__main__':

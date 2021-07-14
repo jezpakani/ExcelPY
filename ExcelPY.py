@@ -63,6 +63,12 @@ class ExcelPY:
             self.wb_enhancement = load_workbook(self.fn_enhancement)
             self.wb_incident = load_workbook(self.fn_incident)
             self.wb_destination = load_workbook(self.fn_destination)
+
+            self.wb_alm.iso_dates = True
+            self.wb_defect.iso_dates = True
+            self.wb_enhancement.iso_dates = True
+            self.wb_incident.iso_dates = True
+            self.wb_destination.iso_dates = True
         except Exception as e:
             self.error(str(e))
             return False
@@ -135,9 +141,7 @@ class ExcelPY:
 
                     if column_header.lower() in self.date_fields:
                         buffer = date.today() + timedelta(days=randint(-10, 35))
-                        buffer = buffer.strftime('%Y-%m-%d')
-                    # else:
-                    #     buffer = '[{}] {}:{}'.format(extra, str(rand_x).zfill(5), str(rand_y).zfill(5))
+                        buffer = self.format_date(buffer.strftime('%Y-%m-%d'))
 
                     ws.cell(row=x, column=y).value = buffer
 
@@ -146,7 +150,7 @@ class ExcelPY:
 
                 # this loop is for the destination file
                 for y in range(2, self.wb_destination.active.max_column + 1):
-                    column_header = ws.cell(row=1, column=y).value
+                    column_header = self.wb_destination.active.cell(row=1, column=y).value
                     if column_header is None:  # no idea why but some sheets not reporting column count correctly.
                         break
 
@@ -163,7 +167,7 @@ class ExcelPY:
 
                     if column_header.lower() in self.date_fields:
                         buffer = date.today() + timedelta(days=randint(-10, 35))
-                        buffer = buffer.strftime('%Y-%m-%d')
+                        buffer = self.format_date(buffer.strftime('%Y-%m-%d'))
                     else:
                         buffer = '[{}] {}:{}'.format(extra, str(rand_x).zfill(5), str(rand_y).zfill(5))
 
@@ -182,6 +186,7 @@ class ExcelPY:
             self.error(str(e))
 
         wb.save(fn)
+        self.wb_destination.active = self.wb_destination['Hypercare Incidents']
         self.wb_destination.save(self.fn_destination)
 
     def get_execution_time(self):
@@ -342,27 +347,28 @@ class ExcelPY:
             dump_row = dump_dict[key]
             for c, d in enumerate(dump_row):  # enumerate dictionary rows
                 value = dump_row[d]['value']
-                result = self.get_cell_value(ws_dest, key, d)
+                result = self.get_cell_details(ws_dest, key, d)
                 if result['cell_found']:  # does this key exist in destination
                     this = ws_dest.cell(row=dest_dict[b][d]['row'], column=dest_dict[b][d]['col'])
                     if this.value != value:  # update destination cell
                         self.cells_updated += 1
-                        this.value = value
-                        this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                        this.font = Font(name='Ubuntu', size=11, color='2e2e2e', bold=False, italic=False)
+                        self.format_cell_updated(this, value)
                     else:
-                        this.fill = PatternFill(fill_type='none')
-                        this.font = Font(name='Ubuntu', size=11, color=None, bold=False, italic=False)
+                        self.format_cell_reset(this)
                 else:  # key is not present so we are creating a new row
                     if result['key_found']:  # we need to add the remaining values for columns
                         this = ws_dest.cell(row=result['row'], column=result['col'])
                     else:  # append a new row and add the primary key
                         this = ws_dest.cell(row=ws_dest.max_row + 1, column=comm_headers[d])
 
-                    this.value = value
-                    this.fill = PatternFill(start_color='00e0e0', end_color='00e0e0', fill_type='solid')
-                    this.font = Font(name='Ubuntu', size=11, color='2e2e2e', bold=False, italic=False)
+                    self.format_cell_updated(this, value)
                     self.rows_appended += 1
+
+                if self.is_date(this.value):
+                    cell_date = self.format_date(this.value)
+                    today = self.format_date(datetime.now())
+                    if cell_date < today:
+                        self.format_cell_date_passed(this)
 
         # save our workbook with all changes
         self.cells_updated += rows_updated
@@ -374,7 +380,7 @@ class ExcelPY:
             self.wb_destination.active = self.wb_destination['Hypercare Incidents']
             self.wb_destination.save(self.fn_destination)
 
-    def get_cell_value(self, ws, primary_key, header_name):
+    def get_cell_details(self, ws, primary_key, header_name):
         """
         This method does not match values, it only retrieves the failure found at the intersection
         of primary_key,header name which is effectively row,col.
@@ -423,7 +429,7 @@ class ExcelPY:
                 data = {}
                 pkey = ws.cell(row=x, column=1).value
                 for key, value in headers.items():
-                    buffer = self.get_cell_value(ws, pkey, key)
+                    buffer = self.get_cell_details(ws, pkey, key)
                     if buffer['cell_found']:
                         value = {'value': buffer['value'], 'row': buffer['row'], 'col': buffer['col']}
                         data[key] = value
@@ -465,6 +471,48 @@ class ExcelPY:
         else:
             return False
 
+    def format_cell_updated(self, cell, value=None):
+        """
+        Format a cell to identify it as updated
+        :param cell: the cell to format
+        :param value: an optional value to set the cell to
+        :return: None
+        """
+        self.is_not_used()
+        if value is not None:
+            cell.value = value
+
+        cell.fill = PatternFill(start_color='7fffd4', end_color='7fffd4', fill_type='solid')
+        cell.font = Font(name='Ubuntu', size=11, color='555555', bold=False, italic=False)
+
+    def format_cell_reset(self, cell, value=None):
+        """
+        Reset a cell format to nothing
+        :param cell: the cell to format
+        :param value: an optional value to set the cell to
+        :return: None
+        """
+        self.is_not_used()
+        if value is not None:
+            cell.value = value
+
+        cell.fill = PatternFill(fill_type='none')
+        cell.font = Font(name='Ubuntu', size=11, color='2e2e2e', bold=False, italic=False)
+
+    def format_cell_date_passed(self, cell, value=None):
+        """
+        Reset a cell to indicate the date is before today
+        :param cell: the cell to format
+        :param value: an optional value to set the cell to
+        :return: None
+        """
+        self.is_not_used()
+        if value is not None:
+            cell.value = value
+
+        cell.fill = PatternFill(start_color='b22222', end_color='b22222', fill_type='solid')
+        cell.font = Font(name='Ubuntu', size=11, color='ffffff', bold=False, italic=False)
+
     def days_between(self, d1, d2):
         """
         Calculate the number of days between two dates
@@ -489,7 +537,10 @@ class ExcelPY:
         :return: a newly formatted date value
         """
         try:
-            d = date.fromisoformat(date_val[0:10])
+            if type(date_val) is not datetime:
+                d = date.fromisoformat(date_val[0:10])
+            else:
+                d = date_val
             return d.strftime('%Y-%m-%d')
         except Exception as e:
             self.error((str(e)))

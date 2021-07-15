@@ -365,9 +365,7 @@ class ExcelPY:
                     self.rows_appended += 1
 
                 if self.is_date(this.value):
-                    cell_date = self.format_date(this.value)
-                    today = self.format_date(datetime.now())
-                    if cell_date < today:
+                    if self.format_date(this.value) < self.format_date(datetime.now()):
                         self.format_cell_date_passed(this)
 
         # save our workbook with all changes
